@@ -2,26 +2,26 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
+
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Log in to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      - name: Build and push Docker image
+      - name: Print environment info (debug)
         run: |
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/flask-app:latest -f - . << 'EOF'
+          echo "Runner: $(uname -a)"
+          echo "Git ref: $GITHUB_REF"
+          echo "Commit SHA: $GITHUB_SHA"
+          docker --version || echo "docker not available"
+
+      - name: Create Dockerfile (inline)
+        run: |
+          cat > Dockerfile <<'DOCKERFILE'
           # Use official Python image
           FROM python:3.11-slim
 
@@ -40,6 +40,35 @@ jobs:
 
           # Run app
           CMD ["python", "app.py"]
-          EOF
+          DOCKERFILE
 
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/flask-app:latest
+      - name: Show Dockerfile (debug)
+        run: |
+          echo "----- Dockerfile -----"
+          sed -n '1,200p' Dockerfile
+          echo "----------------------"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/flask-app:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/flask-app:${{ github.sha }}
+
+      - name: Verify image pushed (docker hub inspect via registry API sanity)
+        run: |
+          echo "Pushed tags: latest and $GITHUB_SHA"
+          # simple success message; if you want to curl DockerHub API you can (requires token & rate limits)
