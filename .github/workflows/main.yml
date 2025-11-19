@@ -1,0 +1,45 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/flask-app:latest -f - . << 'EOF'
+          # Use official Python image
+          FROM python:3.11-slim
+
+          # Set working directory
+          WORKDIR /app
+
+          # Copy requirements and install
+          COPY requirements.txt .
+          RUN pip install --no-cache-dir -r requirements.txt
+
+          # Copy app code
+          COPY . .
+
+          # Expose port
+          EXPOSE 3000
+
+          # Run app
+          CMD ["python", "app.py"]
+          EOF
+
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/flask-app:latest
